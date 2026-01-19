@@ -1,0 +1,3 @@
+.reygpt-mask.yml
+inventory/*.json
+output/*.cfg

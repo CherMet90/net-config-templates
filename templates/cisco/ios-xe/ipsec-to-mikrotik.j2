@@ -1,0 +1,29 @@
+crypto keyring MIKROTIKS vrf {{ fvrf_name }}
+  pre-shared-key address {{ peer_ip }} key {{ psk }}
+
+crypto isakmp profile {{ peer_profile_name }}
+  vrf {{ fvrf_name }}
+  keyring MIKROTIKS
+  self-identity address
+  match identity address {{ peer_ip }} 255.255.255.255
+
+crypto ipsec transform-set TS-MIKROTIK esp-aes esp-sha-hmac
+ mode transport
+
+crypto ipsec profile {{ ipsec_profile_name }}
+ set security-association lifetime seconds 1740
+ set transform-set TS-MIKROTIK
+ set pfs group2
+ set isakmp-profile {{ peer_profile_name }}
+
+interface {{ tunnel_if }}
+ description {{ description }}
+ ip address {{ tunnel_ip }} {{ tunnel_mask }}
+ ip mtu {{ tunnel_mtu | default(1376) }}
+ ip tcp adjust-mss {{ tcp_mss | default(1336) }}
+ ip ospf shutdown
+ tunnel source {{ tunnel_source_if }}
+ tunnel destination {{ peer_ip }}
+ tunnel vrf {{ fvrf_name }}
+ tunnel protection ipsec profile {{ ipsec_profile_name }}
+end

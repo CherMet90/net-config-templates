@@ -1,0 +1,72 @@
+# ====== EDIT IN HQ (генератор) ======
+:local SITE_ID "{{ site_id }}"
+:local HQ_WG_ENDPOINT "{{ hq_wg_endpoint }}"
+:local HQ_WG_PUB "{{ hq_wg_pubkey }}"
+:local BR_WG_PRIV "{{ branch_wg_privkey }}"
+:local BR_VPN_IP "{{ branch_vpn_ip }}"
+:local REMOTE_USER "{{ remote_user | default('noc') }}"
+:local REMOTE_PASS "{{ remote_pass }}"
+:local WAN_IF "{{ wan_if | default('ether1') }}"
+# ====================================
+
+# --- Interface lists ---
+:do { /interface list add name=WAN } on-error={}
+:do { /interface list add name=LAN } on-error={}
+:do { /interface list member add list=WAN interface=$WAN_IF } on-error={}
+
+# --- MAC/Discovery only LAN (best practice) ---
+:local br [/interface bridge find]; :if ([:len $br]>0) do={ :local br0 [:pick $br 0]; :local brName [/interface bridge get $br0 name]; :do { /interface list member add list=LAN interface=$brName } on-error={} }
+:do { /tool mac-server set allowed-interface-list=LAN } on-error={}
+:do { /tool mac-server mac-winbox set allowed-interface-list=LAN } on-error={}
+:do { /ip neighbor discovery-settings set discover-interface-list=LAN } on-error={}
+
+# --- Users ---
+:do { /user remove [find name=$REMOTE_USER] } on-error={}
+:user add name=$REMOTE_USER group=full password=$REMOTE_PASS
+
+# --- Services: disable all except winbox/ssh (ssh optional) ---
+/ip service set [find name~"telnet|ftp|www|api"] disabled=yes
+/ip service set ssh disabled=yes  ;# optional
+/ip service set winbox address=10.255.0.1/32 disabled=no  ;# Только с HQ в VPN!
+
+# --- WAN BLOCK (подставляется генератором) ---
+{{ WAN_BLOCK }}
+
+# --- WireGuard MGMT-туннель (временный!) ---
+/interface wireguard
+:do { remove [find name~"wg-mgmt"] } on-error={}
+add name=wg-mgmt private-key=$BR_WG_PRIV listen-port=0
+
+/ip address
+:do { remove [find interface=wg-mgmt] } on-error={}
+add address=$BR_VPN_IP interface=wg-mgmt
+
+/interface wireguard peers
+:do { remove [find interface=wg-mgmt] } on-error={}
+add interface=wg-mgmt \
+    public-key=$HQ_WG_PUB \
+    endpoint=$HQ_WG_ENDPOINT \
+    allowed-address=10.255.0.1/32 \
+    persistent-keepalive=25 \
+    comment="Temporary MGMT to HQ"
+
+# Маршрут только для HQ
+:do { /ip route remove [find dst-address=10.255.0.1/32 gateway~"wg"] } on-error={}
+:do { /ip route add dst-address=10.255.0.1/32 gateway=wg-mgmt } on-error={}
+
+# --- Firewall: чистим старое, базовый + MGMT via WG ---
+/ip firewall address-list remove [find list~"hq|bootstrap"]
+/ip firewall filter remove [find comment~"bootstrap"]
+/ip firewall nat remove [find comment~"bootstrap"]
+
+# Базовый input filter
+/ip firewall filter \
+add chain=input action=accept connection-state=established,related,untracked comment="bootstrap: est/rel" place-before=0 \
+add chain=input action=drop connection-state=invalid comment="bootstrap: invalid" place-before=1 \
+add chain=input action=accept protocol=icmp comment="bootstrap: icmp" place-before=2
+
+# MGMT: WinBox/SSH только из WG (и локально)
+/ip firewall filter \
+add chain=input action=accept in-interface=wg-mgmt comment="bootstrap: MGMT WinBox/SSH from WG" place-before=3 \
+add chain=input action=accept in-interface-list=LAN protocol=tcp dst-port=8291,22 comment="bootstrap: local MGMT" place-before=4 \
+add chain=input action=drop in-interface-list=WAN comment="bootstrap: drop WAN input" place-before=5

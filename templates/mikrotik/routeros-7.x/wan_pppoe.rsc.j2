@@ -1,0 +1,24 @@
+# --- WAN: PPPoE over $WAN_IF ---
+:local PPPoE_NAME "{{ pppoe_name | default('pppoe-out1') }}"
+:local PPPoE_USER "{{ pppoe_user }}"
+:local PPPoE_PASS "{{ pppoe_pass }}"
+:local PPPoE_ADD_DEFAULT_ROUTE "{{ pppoe_add_default_route | default(true) }}"
+:local PPPoE_USE_PEER_DNS "{{ pppoe_use_peer_dns | default(true) }}"
+
+:do { /interface pppoe-client remove [find name=$PPPoE_NAME] } on-error={}
+:do {
+    /interface pppoe-client add \
+        name=$PPPoE_NAME \
+        interface=$WAN_IF \
+        user=$PPPoE_USER \
+        password=$PPPoE_PASS \
+        disabled=no \
+        add-default-route=$PPPoE_ADD_DEFAULT_ROUTE \
+        use-peer-dns=$PPPoE_USE_PEER_DNS \
+        max-mtu=1480 max-mru=1480 \
+        keepalive-timeout=60 \
+        comment="bootstrap PPPoE for SITE $SITE_ID"
+} on-error={}
+
+/interface list member
+:do { add list=WAN interface=$PPPoE_NAME } on-error={}

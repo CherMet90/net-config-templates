@@ -1,0 +1,15 @@
+# --- WAN: STATIC on $WAN_IF ---
+:local WAN_IP "{{ wan_ip }}"      ;# 1.2.3.4/30
+:local WAN_GW "{{ wan_gw }}"      ;# 1.2.3.1
+:local WAN_DNS "{ wan_dns | default('1.1.1.1,8.8.8.8') }"
+
+/ip address
+:do { remove [find interface=$WAN_IF] } on-error={}
+add address=$WAN_IP interface=$WAN_IF comment="bootstrap WAN static for SITE $SITE_ID"
+
+/ip route
+:do { remove [find dst-address=0.0.0.0/0] } on-error={}
+add dst-address=0.0.0.0/0 gateway=$WAN_GW comment="bootstrap WAN GW for SITE $SITE_ID"
+
+/ip dns
+:do { set servers=$WAN_DNS allow-remote-requests=no } on-error={}

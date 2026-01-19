@@ -1,0 +1,9 @@
+# --- WAN: DHCP on $WAN_IF ---
+:do { /ip dhcp-client remove [find interface=$WAN_IF] } on-error={}
+:do {
+    /ip dhcp-client add interface=$WAN_IF \
+        disabled=no \
+        use-peer-dns=yes \
+        add-default-route=yes \
+        comment="bootstrap WAN DHCP for SITE $SITE_ID"
+} on-error={}
