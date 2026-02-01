@@ -1,0 +1,192 @@
+{#---
+name: cisco-ios-xe-pbr
+description: |
+  Настраивает правило PBR в рамках одной последовательности (sequence) route-map.
+  Позволяет добавлять логику перенаправления для конкретного хоста.
+
+  Поддерживает гибридную схему:
+  1. Сначала проверяются прямые шлюзы (`gateways`) с активным SLA.
+  2. Затем проверяются рекурсивные шлюзы (`recursive_gateways`).
+
+  Можно использовать для добавления новых правил в существующий route-map,
+  меняя `route_map_seq` и `acl_name`.
+vars:
+  route_map_name:
+    type: str
+    required: true
+    desc: Имя Route-Map (контейнера политик).
+    example: PBR-EDGE
+  route_map_seq:
+    type: int
+    required: false
+    default: 10
+    desc: Номер последовательности (sequence) в route-map.
+    example: 10
+  acl_name:
+    type: str
+    required: true
+    desc: Имя Access-List для классификации трафика.
+    example: PBR-ACL-VLAN10
+
+  host_ip:
+    type: ip
+    required: true
+    desc: IP-адрес хоста, трафик которого требует особой маршрутизации
+    example: 10.10.10.50
+
+  # --- Списки шлюзов (можно использовать один или оба) ---
+  gateways:
+    type: list[ip]
+    required: false
+    desc: |
+      Список IP-адресов directly-connected шлюзов в порядке приоритета.
+      Каждый IP будет отслеживаться и получит свой sequence в route-map.
+    example: 203.0.113.1,198.51.100.1
+  recursive_gateways:
+    type: list[ip]
+    required: false
+    desc: |
+      (Пассивный мониторинг) Список НЕ directly-connected шлюзов.
+      PBR будет их использовать, если до них есть маршрут в RIB.
+    example: 8.8.8.8,1.1.1.1
+
+  # --- Опции ---
+  source_interface:
+    type: str
+    required: true
+    desc: Интерфейс-источник для ICMP-проверок (обычно тот, с которого будет отправлен трафик на next-hop)
+    example: Gi0/0/1
+  deny_rfc1918:
+    type: bool
+    required: false
+    default: true
+    desc: Исключить приватные сети (RFC1918) из-под действия политики
+  policy_interface:
+    type: str
+    required: true
+    desc: Интерфейс, к которому применяется PBR (входящий для трафика)
+    example: GigabitEthernet0/0/0
+
+  # --- Таймеры SLA ---
+  sla_start_id:
+    type: int
+    required: false
+    default: 1
+    desc: Начальный номер для IP SLA и Track объектов (чтобы не пересекаться с другими).
+    example: 10
+  sla_threshold:
+    type: int
+    required: false
+    default: 2000
+    desc: |
+      Порог RTT (мс), при превышении которого probe считается деградировавшим.
+      Рекомендации:
+        - RTT < 50 мс   → 300–500
+        - RTT 50–150 мс → 800–1200
+        - RTT > 150 мс  → 1500–3000
+      Обычно threshold ≈ 3–5 × RTT.
+    example: 800
+  sla_timeout:
+    type: int
+    required: false
+    default: 2000
+    desc: |
+      Максимальное время ожидания ответа (мс).
+      Должен быть >= threshold.
+      Рекомендации:
+        - Fast convergence: 1000–2000
+        - Balanced:        2000–3000
+        - Conservative:    4000–6000
+    example: 2000
+  sla_frequency:
+    type: int
+    required: false
+    default: 5
+    desc: |
+      Частота отправки SLA-probe (сек).
+      Влияет на скорость обнаружения отказа и нагрузку.
+      Рекомендации:
+        - Критичный трафик: 5–10
+        - Обычный WAN:      10–30
+        - Нестабильные каналы: 30+
+    example: 10
+  delay_down:
+    type: int
+    required: false
+    default: 10
+    desc: |
+      Задержка перед переходом track в состояние DOWN (сек).
+      Используется для фильтрации кратковременных потерь.
+      Рекомендации:
+        - Быстрая сходимость: 5–10
+        - Стабильность важнее: 15–30
+    example: 10
+  delay_up:
+    type: int
+    required: false
+    default: 10
+    desc: |
+      Задержка перед возвратом track в состояние UP (сек).
+      Обычно больше delay_down, чтобы избежать flap.
+      Рекомендации:
+        - Быстрая сходимость: 10–20
+        - Консервативно:      30–60
+    example: 20
+---#}
+!
+! === IP SLA & Track Configuration ===
+!
+{% if gateways is defined and gateways %}
+{% for gateway in gateways %}
+{% set current_id = sla_start_id + loop.index0 %}
+ip sla {{ current_id }}
+ icmp-echo {{ gateway }} source-interface {{ source_interface }}
+  threshold {{ sla_threshold }}
+  timeout {{ sla_timeout }}
+  frequency {{ sla_frequency }}
+ip sla schedule {{ current_id }} life forever start-time now
+!
+track {{ current_id }} ip sla {{ current_id }} reachability
+ delay down {{ delay_down }} up {{ delay_up }}
+!
+{% endfor %}
+{% endif %}
+!
+! === Access List ===
+!
+ip access-list extended {{ acl_name }}
+{% if deny_rfc1918 %}
+ 10 deny ip any 10.0.0.0 0.255.255.255
+ 20 deny ip any 192.168.0.0 0.0.255.255
+ 30 deny ip any 172.16.0.0 0.15.255.255
+ 40 permit ip host {{ host_ip }} any
+{% else %}
+ 10 permit ip host {{ host_ip }} any
+{% endif %}
+!
+! === Route Map Definition ===
+!
+route-map {{ route_map_name }} permit {{ route_map_seq }}
+ match ip address {{ acl_name }}
+ !
+ ! --- Direct Gateways (Active Monitoring) ---
+{% if gateways is defined and gateways %}
+{% for gateway in gateways %}
+{% set current_id = sla_start_id + loop.index0 %}
+ set ip next-hop verify-availability {{ gateway }} {{ loop.index }} track {{ current_id }}
+{% endfor %}
+{% endif %}
+ !
+ ! --- Recursive Gateways (Passive/RIB Monitoring) ---
+{% if recursive_gateways is defined and recursive_gateways %}
+{% for gateway in recursive_gateways %}
+ set ip next-hop recursive {{ gateway }}
+{% endfor %}
+{% endif %}
+!
+! === Interface Policy Application ===
+!
+interface {{ policy_interface }}
+ ip policy route-map {{ route_map_name }}
+!
+! === End of PBR Configuration ===
