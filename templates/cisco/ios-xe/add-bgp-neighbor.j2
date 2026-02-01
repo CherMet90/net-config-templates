@@ -1,0 +1,37 @@
+{#
+  Добавление BGP-соседа на Cisco IOS-XE.
+
+  Переменные:
+    local_as        — локальная ASN
+    neighbor_ip     — IP BGP-соседа
+    neighbor_as     — ASN соседа
+    description     — описание сессии (опционально)
+    update_source   — исходный интерфейс (обычно Tunnel / Loopback). Соседу должен быть известен маршрут до ip выбранного интерфейса
+    prefix_lists_in  — список имён prefix-list для входящего фильтра (рекомендуется), должен быть создан заранее
+    prefix_lists_out — список имён prefix-list для исходящего фильтра (рекомендуется), должен быть создан заранее
+
+  Пример (через интерактивный рендерер):
+    local_as        : 65001
+    neighbor_ip     : 10.0.0.1
+    neighbor_as     : 65000
+    description     : BGP to HQ
+    update_source   : Tunnel1
+    prefix_lists_in : :list PL-IN-HQ
+    prefix_lists_out: :list PL-OUT-HQ
+#}
+router bgp {{ local_as }}
+ neighbor {{ neighbor_ip }} remote-as {{ neighbor_as }}
+ neighbor {{ neighbor_ip }} description {{ description | default('') }}
+ neighbor {{ neighbor_ip }} update-source {{ update_source }}
+ address-family ipv4
+  {% if prefix_lists_in is defined %}
+  {% for prefix_list in prefix_lists_in %}
+  neighbor {{ neighbor_ip }} prefix-list {{ prefix_list }} in
+  {% endfor %}
+  {% endif %}
+  {% if prefix_lists_out is defined %}
+  {% for prefix_list in prefix_lists_out %}
+  neighbor {{ neighbor_ip }} prefix-list {{ prefix_list }} out
+  {% endfor %}
+  {% endif %}
+  neighbor {{ neighbor_ip }} activate

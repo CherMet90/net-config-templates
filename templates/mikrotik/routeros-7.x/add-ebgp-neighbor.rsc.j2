@@ -1,0 +1,30 @@
+{#
+  Добавление одного eBGP-соседа + одно входное правило-фильтр на RouterOS 7.x
+
+  Обязательные переменные:
+    neighbor_name       — имя соединения (например: BGP-TO-HQ)
+    local_tunnel_ip     — локальный IP туннеля
+    remote_tunnel_ip    — IP соседа в туннеле
+    remote_as           — ASN соседа
+    accepted_prefixes   — список префиксов, которые разрешаем принимать (минимум 1)
+
+  Опционально:
+    out_networks_list   — имя address-list / networks для анонса
+    in_filter_name      — имя цепочки фильтра (по умолчанию: bgp-in)
+#}
+{# Prefix-list для входящих маршрутов #}
+/routing filter rule
+add chain={{ in_filter_name }} disabled=no rule=\
+    "if ({% for prefix in accepted_prefixes %}{% if not loop.first %} || {% endif %}(dst in {{ prefix }}){% endfor %}) { accept }"
+
+{# Само BGP-соединение #}
+/routing bgp connection
+add name={{ neighbor_name }} \
+    remote.address={{ remote_tunnel_ip }}/32 \
+    .as={{ remote_as }} \
+    local.address={{ local_tunnel_ip }} \
+    .role=ebgp \
+    disabled=no \
+    input.filter={{ in_filter_name }}{% if out_networks_list is defined and out_networks_list %} \
+    output.network={{ out_networks_list }}{% endif %} \
+    templates=default

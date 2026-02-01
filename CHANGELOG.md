@@ -17,3 +17,9 @@
   - сохранение (`--dump-context`) и загрузка (`--context`) JSON-контекста.
 - Документация по использованию интерактивного рендера:  
   `docs/how-to-use-interactive-renderer.md`.
+<think>**Thinking about the user's request**
+
+## [0.2.0] - 2026-02-01
+### Added
+- Шаблоны BGP для MikroTik RouterOS 7.x
+- Шаблоны BGP для Cisco IOS-XE

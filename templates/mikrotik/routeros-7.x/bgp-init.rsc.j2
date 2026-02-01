@@ -1,0 +1,15 @@
+{#
+  Инициализация BGP на RouterOS 7.x
+  Применяется 1 раз на маршрутизатор.
+
+  Параметры:
+    local_as        — номер локальной ASN (обязателен)
+    router_id       — router-id маршрутизатора (обычно loopback / mgmt IP)
+    routing_table   — имя основной таблицы маршрутизации (по умолчанию main)
+#}
+
+/routing bgp template
+set default \
+    as={{ local_as }} \
+    router-id={{ router_id }} \
+    routing-table={{ routing_table | default("main") }}
