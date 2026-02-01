@@ -1,24 +1,50 @@
-{#
-  Добавление BGP-соседа на Cisco IOS-XE.
+{#---
+name: cisco-add-bgp-neighbor
+description: Добавление BGP-соседа (eBGP/iBGP) на Cisco IOS-XE.
+vars:
+  local_as:
+    type: int
+    required: true
+    desc: Локальный номер ASN на этом роутере.
+    example: 65001
 
-  Переменные:
-    local_as        — локальная ASN
-    neighbor_ip     — IP BGP-соседа
-    neighbor_as     — ASN соседа
-    description     — описание сессии (опционально)
-    update_source   — исходный интерфейс (обычно Tunnel / Loopback). Соседу должен быть известен маршрут до ip выбранного интерфейса
-    prefix_lists_in  — список имён prefix-list для входящего фильтра (рекомендуется), должен быть создан заранее
-    prefix_lists_out — список имён prefix-list для исходящего фильтра (рекомендуется), должен быть создан заранее
+  neighbor_ip:
+    type: ip
+    required: true
+    desc: IP-адрес BGP-соседа (loopback или адрес туннеля).
+    example: 10.0.0.1
 
-  Пример (через интерактивный рендерер):
-    local_as        : 65001
-    neighbor_ip     : 10.0.0.1
-    neighbor_as     : 65000
-    description     : BGP to HQ
-    update_source   : Tunnel1
-    prefix_lists_in : :list PL-IN-HQ
-    prefix_lists_out: :list PL-OUT-HQ
-#}
+  neighbor_as:
+    type: int
+    required: true
+    desc: ASN соседа.
+    example: 65000
+
+  description:
+    type: str
+    required: false
+    desc: Описание BGP-сессии (для удобства в show-командах).
+    default: ""
+    example: BGP to HQ
+
+  update_source:
+    type: str
+    required: true
+    desc: Интерфейс-источник BGP-сессии (LoopbackX / TunnelX).
+    example: Tunnel1
+
+  prefix_lists_in:
+    type: list[str]
+    required: false
+    desc: Список prefix-list для входящего фильтра (должен быть создан заранее).
+    example: [PL-IN-HQ]
+
+  prefix_lists_out:
+    type: list[str]
+    required: false
+    desc: Список prefix-list для исходящего фильтра (должен быть создан заранее).
+    example: [PL-OUT-HQ]
+---#}
 router bgp {{ local_as }}
  neighbor {{ neighbor_ip }} remote-as {{ neighbor_as }}
  neighbor {{ neighbor_ip }} description {{ description | default('') }}

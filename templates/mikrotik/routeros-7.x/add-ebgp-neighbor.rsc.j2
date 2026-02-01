@@ -1,17 +1,50 @@
-{#
-  Добавление одного eBGP-соседа + одно входное правило-фильтр на RouterOS 7.x
+{#---
+name: mikrotik-add-ebgp-neighbor
+description: Добавление одного eBGP-соседа + фильтра входящих маршрутов на RouterOS 7.x.
+vars:
+  neighbor_name:
+    type: str
+    required: true
+    desc: Имя BGP-соединения.
+    example: EBGP-TO-HQ
 
-  Обязательные переменные:
-    neighbor_name       — имя соединения (например: BGP-TO-HQ)
-    local_tunnel_ip     — локальный IP туннеля
-    remote_tunnel_ip    — IP соседа в туннеле
-    remote_as           — ASN соседа
-    accepted_prefixes   — список префиксов, которые разрешаем принимать (минимум 1)
+  local_tunnel_ip:
+    type: ip
+    required: true
+    desc: Локальный IP в туннеле, с которого поднимается BGP.
+    example: 10.10.10.1
 
-  Опционально:
-    out_networks_list   — имя address-list / networks для анонса
-    in_filter_name      — имя цепочки фильтра (по умолчанию: bgp-in)
-#}
+  remote_tunnel_ip:
+    type: ip
+    required: true
+    desc: IP соседа в туннеле.
+    example: 10.10.10.2
+
+  remote_as:
+    type: int
+    required: true
+    desc: ASN соседа (eBGP).
+    example: 65000
+
+  accepted_prefixes:
+    type: list[cidr]
+    required: true
+    desc: Список префиксов, которые разрешено принимать от соседа.
+    example: 10.0.0.0/24,192.168.1.0/24
+
+  out_networks_list:
+    type: str
+    required: false
+    desc: Имя списка сетей для анонса (address-list должен быть создан заранее).
+    example: NET-TO-HQ
+
+  in_filter_name:
+    type: str
+    required: false
+    desc: Имя цепочки фильтра для входящих маршрутов.
+    default: bgp-in
+    example: bgp-in
+---#}
 {# Prefix-list для входящих маршрутов #}
 /routing filter rule
 add chain={{ in_filter_name }} disabled=no rule=\
@@ -25,6 +58,6 @@ add name={{ neighbor_name }} \
     local.address={{ local_tunnel_ip }} \
     .role=ebgp \
     disabled=no \
-    input.filter={{ in_filter_name }}{% if out_networks_list is defined and out_networks_list %} \
+    input.filter={{ in_filter_name }}{% if in_filter_name is defined and in_filter_name %} \
     output.network={{ out_networks_list }}{% endif %} \
     templates=default

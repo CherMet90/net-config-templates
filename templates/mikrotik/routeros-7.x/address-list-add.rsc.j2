@@ -1,16 +1,19 @@
-{#
-  Шаблон для добавления IP-адресов или подсетей в Address List MikroTik RouterOS 7.x
+{#---
+name: mikrotik-address-list-add
+description: Добавление подсетей/адресов в address-list на RouterOS 7.x.
+vars:
+  address_list_name:
+    type: str
+    required: true
+    desc: Имя address-list.
+    example: NET-TO-HQ
 
-  Параметры:
-    address_list_name   — имя списка адресов (обязательный)
-    addresses           — список адресов или подсетей (строки), пример: ["192.168.1.1", "10.0.0.0/24"]
-
-  Использование:
-    через интерактивный ввод задайте:
-      address_list_name: MY_ADDRESS_LIST
-      addresses: :list 192.168.1.1,10.0.0.0/24,172.16.0.0/16
-#}
-
+  addresses:
+    type: list[str]
+    required: true
+    desc: Список IP-адресов или подсетей (CIDR), добавляемых в список.
+    example: 192.168.1.1,10.0.0.0/24,172.16.0.0/16
+---#}
 {% for addr in addresses %}
  /ip firewall address-list add list={{ address_list_name }} address={{ addr }}
 {% endfor %}

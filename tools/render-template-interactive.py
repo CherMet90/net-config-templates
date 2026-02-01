@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
-Универсальный интерактивный рендерер Jinja2-шаблонов.
-
-Примеры:
-  python tools/render-template-interactive.py templates/cisco/ios-xe/ipsec-to-mikrotik.j2
-  python tools/render-template-interactive.py templates/mikrotik/routeros-7.x/bootstrap.rsc.j2 -o out.rsc
+Универсальный интерактивный рендерер Jinja2-шаблонов с поддержкой YAML-docstring.
 """
 
 import argparse
@@ -12,47 +8,38 @@ import json
 import os
 import re
 import sys
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Set
 
+import yaml
 from jinja2 import Environment, FileSystemLoader, meta, nodes
+from ipaddress import ip_address, ip_network
+
+
+class VarMeta:
+    def __init__(self, desc: str = "", type: str = "str", required: bool = False,
+                 default: Any = None, example: str = ""):
+        self.desc = desc
+        self.type = type.lower()
+        self.required = required
+        self.default = default
+        self.example = example
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Интерактивный рендерер Jinja2-шаблонов "
-                    "(спрашивает значения переменных и генерирует вывод)"
+        description="Интерактивный рендерер Jinja2-шаблонов с поддержкой YAML-docstring"
     )
-    parser.add_argument(
-        "template",
-        help="Путь к Jinja2-шаблону (например templates/cisco/ios-xe/ipsec-to-mikrotik.j2)",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        help="Файл для записи результата. Если не указан — печать в stdout.",
-    )
-    parser.add_argument(
-        "--dump-context",
-        help="Сохранить введённые переменные в JSON-файл (для повторного использования).",
-    )
-    parser.add_argument(
-        "--context",
-        help="Загрузить контекст из JSON-файла (частично/полностью заполнить переменные).",
-    )
+    parser.add_argument("template", help="Путь к шаблону")
+    parser.add_argument("-o", "--output", help="Файл вывода")
+    parser.add_argument("--dump-context", help="Сохранить контекст в JSON")
+    parser.add_argument("--context", help="Загрузить контекст из JSON")
     return parser.parse_args()
 
-
-def load_template_env(template_path: str) -> tuple[Environment, str, str]:
-    """
-    Возвращает:
-      env         - Jinja2 Environment
-      template_dir- каталог с шаблоном
-      template_name - имя шаблона внутри каталога
-    """
+def load_template_env(template_path: str):
     template_abs = os.path.abspath(template_path)
     template_dir = os.path.dirname(template_abs)
     template_name = os.path.basename(template_abs)
-
     env = Environment(
         loader=FileSystemLoader(template_dir),
         trim_blocks=True,
@@ -60,50 +47,30 @@ def load_template_env(template_path: str) -> tuple[Environment, str, str]:
     )
     return env, template_dir, template_name
 
+def extract_yaml_header(source: str) -> Optional[Dict[str, Any]]:
+    """Ищет блок {#--- ... ---#} в начале шаблона."""
+    pattern = re.compile(r"{#---\n(.*?)\n---#}", re.DOTALL)
+    match = pattern.search(source)
+    if not match:
+        return None
+    try:
+        return yaml.safe_load(match.group(1))
+    except yaml.YAMLError as e:
+        print(f"Warning: Ошибка парсинга YAML-header: {e}", file=sys.stderr)
+        return None
 
-def get_undeclared_variables(env: Environment, template_name: str) -> Set[str]:
-    """
-    Возвращает множество имен переменных, которые используются в шаблоне
-    и не имеют значений по умолчанию в самом шаблоне.
-    """
-    source = env.loader.get_source(env, template_name)[0]
-    parsed_ast = env.parse(source)
-    return meta.find_undeclared_variables(parsed_ast)
-
-def get_default_values(env: Environment, template_name: str) -> Dict[str, Any]:
-    """
-    Проходит по AST шаблона и пытается найти конструкции вида:
-      {{ var | default(123) }}
-      {{ var | default("text") }}
-      {{ var | default(true) }}
-
-    Возвращает dict: { 'var_name': default_value, ... }
-
-    Ограничения:
-      - работает для простых случаев: Name|default(Const)
-      - игнорирует сложные выражения.
-    """
+def get_template_defaults(env: Environment, template_name: str) -> Dict[str, Any]:
+    """Извлекает значения из | default(...) — оставляем как fallback."""
     source = env.loader.get_source(env, template_name)[0]
     parsed = env.parse(source)
-
     defaults: Dict[str, Any] = {}
 
     def walk(node: nodes.Node):
-        # ищем фильтры (Filter node)
-        if isinstance(node, nodes.Filter):
-            if node.name == "default":
-                # node.node — то, к чему применяется фильтр,
-                # ожидаем Name (переменная)
-                if isinstance(node.node, nodes.Name):
-                    var_name = node.node.name
-
-                    # args[0] — первый аргумент default(...)
-                    if node.args and isinstance(node.args[0], nodes.Const):
-                        defaults[var_name] = node.args[0].value
-
-        # рекурсивный обход всех полей-children
-        for field_name in node.fields:
-            value = getattr(node, field_name, None)
+        if isinstance(node, nodes.Filter) and node.name == "default":
+            if isinstance(node.node, nodes.Name) and node.args and isinstance(node.args[0], nodes.Const):
+                defaults[node.node.name] = node.args[0].value
+        for field in node.fields:
+            value = getattr(node, field, None)
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, nodes.Node):
@@ -114,110 +81,44 @@ def get_default_values(env: Environment, template_name: str) -> Dict[str, Any]:
     walk(parsed)
     return defaults
 
-def prompt_scalar(name: str) -> Any:
-    """
-    Спрашивает у пользователя простое значение (строка/число/bool),
-    пытается аккуратно привести тип.
-    """
+def validate_and_cast(value: str, var_type: str) -> Any:
+    """Простая валидация и приведение типов."""
+    value = value.strip()
+    if value == "" and var_type != "str":
+        return None
+
+    if var_type == "int":
+        return int(value)
+    elif var_type == "bool":
+        return value.lower() in ("true", "yes", "y", "1", "on")
+    elif var_type == "ip":
+        return ip_address(value)
+    elif var_type == "cidr":
+        return ip_network(value)
+    elif var_type.startswith("list"):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    else:  # str и неизвестные
+        return value
+
+def prompt_with_meta(name: str, meta: VarMeta) -> Any:
+    example = f" (пример: {meta.example})" if meta.example else ""
+    default_hint = f" [{meta.default!r}]" if meta.default is not None else ""
+    prompt = f"{meta.desc or name}{example}{default_hint}: "
+
     while True:
-        raw = input(f"Значение для '{name}' (строка/число/bool): ").strip()
+        raw = input(prompt).strip()
+        if raw == "" and meta.default is not None:
+            return meta.default
+        if raw == "" and not meta.required:
+            return None
 
-        # Пустую строку считаем пустой строкой (а не None)
-        if raw == "":
-            return ""
-
-        # bool
-        lower = raw.lower()
-        if lower in ("true", "false", "yes", "no", "y", "n"):
-            return lower in ("true", "yes", "y")
-
-        # int
         try:
-            return int(raw)
-        except ValueError:
-            pass
+            value = validate_and_cast(raw, meta.type)
+            return value
+        except Exception as e:
+            print(f"Некорректное значение для типа '{meta.type}': {e}")
 
-        # float
-        try:
-            return float(raw)
-        except ValueError:
-            pass
-
-        # строка
-        return raw
-
-
-def prompt_list(name: str) -> Any:
-    """
-    Запрос списка значений: либо простых, либо словарей.
-    Простейший интерактивный формат:
-      - сначала спросим, список чего: 'scalar' или 'dict'
-    """
-    print(f"\n=== Ввод списка для переменной '{name}' ===")
-    item_type = ""
-    while item_type not in ("scalar", "dict"):
-        item_type = input(
-            "Тип элементов списка ('scalar' или 'dict') [scalar]: "
-        ).strip().lower() or "scalar"
-
-    items = []
-    idx = 1
-    while True:
-        cont = input(f"Добавить элемент #{idx}? [y/N]: ").strip().lower()
-        if cont not in ("y", "yes"):
-            break
-
-        if item_type == "scalar":
-            items.append(prompt_scalar(f"{name}[{idx - 1}]"))
-        else:
-            # dict
-            print(f"Ввод полей словаря для элемента #{idx}. "
-                  "Пустое имя ключа — завершить ввод этого словаря.")
-            obj: Dict[str, Any] = {}
-            while True:
-                key = input("  Имя поля (пусто — закончить этот элемент): ").strip()
-                if key == "":
-                    break
-                value = prompt_scalar(f"{name}[{idx - 1}].{key}")
-                obj[key] = value
-            items.append(obj)
-
-        idx += 1
-
-    return items
-
-
-def prompt_value(name: str) -> Any:
-    """
-    Предлагает ввести тип: scalar | list | json
-    - scalar: единичное значение
-    - list:   список
-    - json:   произвольная структура в формате JSON одной строкой
-    """
-    print(f"\nПеременная: {name}")
-    while True:
-        mode = input(
-            "Тип значения ('scalar', 'list', 'json') [scalar]: "
-        ).strip().lower() or "scalar"
-
-        if mode == "scalar":
-            return prompt_scalar(name)
-        if mode == "list":
-            return prompt_list(name)
-        if mode == "json":
-            raw = input(
-                "Введите JSON-значение (одной строкой, например "
-                "'{\"a\": 1, \"b\": [1,2]}' ): "
-            )
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError as e:
-                print(f"Ошибка JSON: {e}")
-                continue
-
-        print("Неизвестный тип. Разрешены: scalar, list, json.")
-
-def prompt_auto(name: str, default: Optional[Any] = None):
+def prompt_auto_fallback(name: str, default: Optional[Any] = None):
     """
     Просит одно значение, пытается понять тип автоматически.
     Спец-префиксы:
@@ -271,47 +172,58 @@ def prompt_auto(name: str, default: Optional[Any] = None):
 
     return raw, False          # default → str
 
-def load_context_from_file(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def main() -> None:
     args = parse_args()
-
     env, template_dir, template_name = load_template_env(args.template)
-    undeclared = get_undeclared_variables(env, template_name)
-    template_defaults = get_default_values(env, template_name)
 
-    # Базовый контекст (из файла, если указан)
+    source = env.loader.get_source(env, template_name)[0]
+    yaml_meta = extract_yaml_header(source)
+    template_defaults = get_template_defaults(env, template_name)
+
+    # Загружаем внешний контекст
     context: Dict[str, Any] = {}
     if args.context:
-        if not os.path.isfile(args.context):
-            print(f"Файл контекста не найден: {args.context}", file=sys.stderr)
-            sys.exit(1)
-        print(f"Загружаю контекст из {args.context}")
-        context = load_context_from_file(args.context)
+        with open(args.context, "r", encoding="utf-8") as f:
+            context = json.load(f)
 
-    print(f"Шаблон:        {args.template}")
-    print(f"Переменные:    {', '.join(sorted(undeclared)) or '(нет)'}")
+    # Определяем переменные и их метаданные
+    vars_meta: OrderedDict[str, VarMeta] = OrderedDict()
+    undeclared = meta.find_undeclared_variables(env.parse(source))
 
-    # Спросим только те переменные, у которых нет значения в context
-    for var in sorted(undeclared):
-        if var in context:
-            print(
-                f"\nПеременная '{var}' уже задана в context, "
-                f"пропускаю (значение: {context[var]!r})"
+    if yaml_meta and "vars" in yaml_meta:
+        print("Обнаружен YAML-docstring → используем расширенный режим")
+        for var_name, var_info in yaml_meta["vars"].items():
+            vars_meta[var_name] = VarMeta(
+                desc=var_info.get("desc", ""),
+                type=var_info.get("type", "str"),
+                required=var_info.get("required", False),
+                default=var_info.get("default"),
+                example=var_info.get("example", "")
             )
-            continue
-        
-        default_val = template_defaults.get(var)  # может быть None
+        # Добавляем переменные, которые есть в шаблоне, но не описаны в YAML
+        for v in undeclared:
+            if v not in vars_meta:
+                vars_meta[v] = VarMeta()
+    else:
+        print("YAML-docstring не найден → старый режим")
+        for v in sorted(undeclared):
+            vars_meta[v] = VarMeta(default=template_defaults.get(v))
 
-        val, is_empty = prompt_auto(var, default=default_val)
-        if is_empty:
-            # пользователь нажал Enter → не добавляем в context
-            # Jinja2 сможет взять default из шаблона
+    # Интерактивный ввод
+    for var_name, var_meta in vars_meta.items():
+        if var_name in context:
+            print(f"'{var_name}' уже задан в --context → пропуск")
             continue
-        context[var] = val
+
+        default_val = context.get(var_name) or var_meta.default or template_defaults.get(var_name)
+
+        if yaml_meta and "vars" in yaml_meta:
+            value = prompt_with_meta(var_name, var_meta)
+        else:
+            value, _ = prompt_auto_fallback(var_name, default=default_val)
+
+        if value is not None or var_meta.required:
+            context[var_name] = value
 
     # Можно сохранить контекст на будущее
     if args.dump_context:

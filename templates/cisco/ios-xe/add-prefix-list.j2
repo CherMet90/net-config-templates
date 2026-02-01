@@ -1,18 +1,18 @@
-{#
-  Создание простого prefix-list на Cisco IOS-XE.
+{#---
+name: cisco-add-prefix-list
+description: Создание простого prefix-list на Cisco IOS-XE.
+vars:
+  prefix_list_name:
+    type: str
+    required: true
+    desc: Имя prefix-list.
+    example: PL-IN-HQ
 
-  Переменные:
-    prefix_list_name — имя prefix-list
-    permit_prefix    — разрешаемый префикс (основной)
-
-  Логика:
-    - первая строка: permit для нужного префикса
-    - вторая строка: deny всего остального (0.0.0.0/0 le 32)
-
-  Пример:
-    prefix_list_name : PL-IN-HQ
-    permit_prefix    : 10.0.241.0/24
-#}
-
+  permit_prefix:
+    type: cidr
+    required: true
+    desc: Разрешаемый префикс (основной).
+    example: 10.0.241.0/24
+---#}
 ip prefix-list {{ prefix_list_name }} seq 10 permit {{ permit_prefix }}
 ip prefix-list {{ prefix_list_name }} seq 100 deny 0.0.0.0/0 le 32

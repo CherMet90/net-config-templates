@@ -1,13 +1,26 @@
-{#
-  Инициализация BGP на RouterOS 7.x
-  Применяется 1 раз на маршрутизатор.
+{#---
+name: mikrotik-bgp-init
+description: Одноразовая инициализация BGP на RouterOS 7.x (template default).
+vars:
+  local_as:
+    type: int
+    required: true
+    desc: Локальная ASN RouterOS.
+    example: 65001
 
-  Параметры:
-    local_as        — номер локальной ASN (обязателен)
-    router_id       — router-id маршрутизатора (обычно loopback / mgmt IP)
-    routing_table   — имя основной таблицы маршрутизации (по умолчанию main)
-#}
+  router_id:
+    type: ip
+    required: true
+    desc: Router ID (обычно loopback / mgmt IP).
+    example: 10.255.255.1
 
+  routing_table:
+    type: str
+    required: false
+    desc: Имя таблицы маршрутизации для BGP.
+    default: main
+    example: main
+---#}
 /routing bgp template
 set default \
     as={{ local_as }} \
