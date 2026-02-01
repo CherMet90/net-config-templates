@@ -23,3 +23,7 @@
 ### Added
 - Шаблоны BGP для MikroTik RouterOS 7.x
 - Шаблоны BGP для Cisco IOS-XE
+
+## [0.2.1] - 2026-02-01
+### Added
+- Документация по настройке BGP для Cisco IOS-XE и Mikrotik ROS7
