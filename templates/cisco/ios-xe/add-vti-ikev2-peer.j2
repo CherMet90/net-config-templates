@@ -1,0 +1,123 @@
+{#---
+name: add-vti-ikev2-peer
+description: |
+  Настройка IKEv2 профиля, Keyring и туннельного интерфейса для нового пира
+  Важно: transform-set NGE-GCM и NGE-CBC должны быть созданы заранее
+vars:
+  peer_name:
+    type: str
+    required: true
+    desc: Уникальное имя пира (используется в профилях и описании)
+    example: SITE_MOW_01
+  remote_ip:
+    type: ip
+    required: true
+    desc: Публичный IP-адрес удаленной стороны
+    example: 198.51.100.10
+  local_ip:
+    type: ip
+    required: true
+    desc: Локальный IP-адрес источника туннеля (WAN IP)
+    example: 203.0.113.5
+  psk:
+    type: str
+    required: true
+    desc: Pre-shared key
+    example: SecretKey123!
+  tunnel_id:
+    type: int
+    required: true
+    desc: Номер интерфейса Tunnel (например, 100)
+    example: 100
+  tunnel_address:
+    type: ip
+    required: true
+    desc: IP-адрес внутри туннеля
+    example: 10.255.0.1
+  tunnel_netmask:
+    type: ip
+    required: false
+    desc: Маска подсети туннеля
+    default: 255.255.255.252
+  fvrf:
+    type: str
+    required: false
+    desc: Название VRF для транспорта (Front Door VRF). Оставьте пустым, если глобальная таблица.
+    example: Internet
+  ike_lifetime:
+    type: int
+    required: false
+    desc: IKEv2 SA lifetime в секундах
+    default: 28800
+    example: 86400
+  dpd_interval:
+    type: int
+    required: false
+    desc: DPD (Dead Peer Detection) интервал в секундах
+    default: 30
+    example: 60
+  dpd_retries:
+    type: int
+    required: false
+    desc: DPD количество повторных попыток
+    default: 5
+    example: 3
+  pfs_group:
+    type: str
+    required: false
+    desc: Perfect Forward Secrecy (PFS) Diffie-Hellman группа
+    default: group19
+    example: group14
+  ipsec_sa_lifetime:
+    type: int
+    required: false
+    desc: IPsec SA lifetime в секундах
+    default: 3600
+    example: 7200
+  tcp_mss:
+    type: int
+    required: false
+    desc: TCP Maximum Segment Size
+    example: 1360
+---#}
+!
+! --- Keyring: {{ peer_name }} ---
+crypto ikev2 keyring {{ peer_name }}
+ peer {{ peer_name }}
+  address {{ remote_ip }}
+  pre-shared-key {{ psk }}
+!
+! --- IKEv2 Profile: {{ peer_name }} ---
+crypto ikev2 profile {{ peer_name }}
+ match fvrf any
+ match address local {{ local_ip }}
+ match identity remote address {{ remote_ip }} 255.255.255.255
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local {{ peer_name }}
+ lifetime {{ ike_lifetime }}
+ dpd {{ dpd_interval }} {{ dpd_retries }} periodic
+!
+! --- IPsec Profile: {{ peer_name }} ---
+crypto ipsec profile {{ peer_name }}
+ set transform-set NGE-GCM NGE-CBC
+ set pfs {{ pfs_group }}
+ set ikev2-profile {{ peer_name }}
+ set security-association lifetime seconds {{ ipsec_sa_lifetime }}
+!
+! --- Interface: Tunnel{{ tunnel_id }} ---
+interface Tunnel{{ tunnel_id }}
+ description {{ peer_name }}
+ ip address {{ tunnel_address }} {{ tunnel_netmask }}
+ {% if tcp_mss is defined and tcp_mss %}
+ ip tcp adjust-mss {{ tcp_mss }}
+ {% endif %}
+ ip ospf shutdown
+ tunnel source {{ local_ip }}
+ tunnel mode ipsec ipv4
+ tunnel destination {{ remote_ip }}
+ {% if fvrf %}
+ tunnel vrf {{ fvrf }}
+ {% endif %}
+ tunnel protection ipsec profile {{ peer_name }}
+!

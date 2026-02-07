@@ -1,0 +1,32 @@
+{#---
+name: ipsec-ikev2-global
+description: >
+  Настройка глобальных параметров IKEv2 и IPsec (Proposals, Policies, Transform Sets).
+  Применяется единожды перед созданием туннелей.
+vars: {}
+---#}
+!
+! --- IKEv2 Proposals ---
+crypto ikev2 proposal NGE-COMPAT
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 proposal NGE-STRONG
+ encryption aes-gcm-256
+ prf sha256
+ group 19
+!
+! --- IKEv2 Policy ---
+crypto ikev2 policy NGE-POLICY
+ match fvrf any
+ proposal NGE-STRONG
+ proposal NGE-COMPAT
+!
+! --- IPsec Transform Sets ---
+crypto ipsec transform-set NGE-GCM esp-gcm 256
+ mode tunnel
+!
+crypto ipsec transform-set NGE-CBC esp-aes 256 esp-sha256-hmac
+ mode tunnel
+!

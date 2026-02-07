@@ -45,3 +45,9 @@
 ## [0.4.0] - 2026-02-01
 ### Added
 - Новый шаблон `templates/cisco/ios-xe/pbr.j2` для настройки Policy-Based Routing (PBR) на Cisco IOS-XE
+
+## [0.5.0] - 2026-02-07
+### Added
+- Новые шаблоны IPsec для Cisco IOS-XE:
+  - `templates/cisco/ios-xe/ipsec-ikev2-global.j2`: базовая настройка Proposals/Policies по концепции NGE (Next Generation Encryption)
+  - `templates/cisco/ios-xe/add-vti-ikev2-peer.j2`: настройка конкретного IKEv2/IPsec туннеля
