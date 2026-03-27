@@ -100,7 +100,7 @@ crypto ikev2 profile {{ peer_name }}
 !
 ! --- IPsec Profile: {{ peer_name }} ---
 crypto ipsec profile {{ peer_name }}
- set transform-set NGE-GCM NGE-CBC
+ set transform-set AWS-BASE
  set pfs {{ pfs_group }}
  set ikev2-profile {{ peer_name }}
  set security-association lifetime seconds {{ ipsec_sa_lifetime }}
