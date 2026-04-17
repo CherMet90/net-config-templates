@@ -2,6 +2,47 @@
 
 Все значимые изменения этого проекта будут документироваться в этом файле.
 
+# Changelog
+
+Все значимые изменения этого проекта будут документироваться в этом файле.
+## [0.6.0] - 2026-04-17
+### Added
+- Новый шаблон для MikroTik RouterOS 7.x:
+  - `templates/mikrotik/routeros-7.x/add-wireguard-client.rsc.j2`: универсальная настройка WireGuard-клиента (интерфейс, peer, маршруты, опционально NAT)
+
+## [0.5.0] - 2026-02-07
+### Added
+- Новые шаблоны IPsec для Cisco IOS-XE:
+  - `templates/cisco/ios-xe/ipsec-ikev2-global.j2`: базовая настройка Proposals/Policies по концепции NGE (Next Generation Encryption)
+  - `templates/cisco/ios-xe/add-vti-ikev2-peer.j2`: настройка конкретного IKEv2/IPsec туннеля
+
+## [0.4.0] - 2026-02-01
+### Added
+- Новый шаблон `templates/cisco/ios-xe/pbr.j2` для настройки Policy-Based Routing (PBR) на Cisco IOS-XE
+
+## [0.3.1] - 2026-02-01
+### Added
+- Обновлена документация по работе с интерактивным рендером
+
+## [0.3.0] - 2026-02-01
+### Added
+- Поддержка **YAML-docstring** в шаблонах:
+  - Все BGP-шаблоны (Cisco и MikroTik) переработаны с декларативным YAML-header в начале файла.
+  - Формат позволяет описывать переменные, их типы, обязательность, значения по умолчанию, примеры и описания.
+- Обновлён интерактивный рендерер `tools/render-template-interactive.py`:
+  - Автоматический парсинг YAML-docstring.
+  - Улучшенный UX: вывод описаний, примеров, валидация типов (int, ip, cidr, list и т.д.), проверка обязательных полей.
+  - Полная обратная совместимость с шаблонами без YAML-header.
+
+## [0.2.1] - 2026-02-01
+### Added
+- Документация по настройке BGP для Cisco IOS-XE и Mikrotik ROS7
+
+## [0.2.0] - 2026-02-01
+### Added
+- Шаблоны BGP для MikroTik RouterOS 7.x
+- Шаблоны BGP для Cisco IOS-XE
+
 ## [0.1.0] - 2026-01-19
 ### Added
 - Начальная структура проекта:
@@ -17,37 +58,4 @@
   - сохранение (`--dump-context`) и загрузка (`--context`) JSON-контекста.
 - Документация по использованию интерактивного рендера:  
   `docs/how-to-use-interactive-renderer.md`.
-<think>**Thinking about the user's request**
 
-## [0.2.0] - 2026-02-01
-### Added
-- Шаблоны BGP для MikroTik RouterOS 7.x
-- Шаблоны BGP для Cisco IOS-XE
-
-## [0.2.1] - 2026-02-01
-### Added
-- Документация по настройке BGP для Cisco IOS-XE и Mikrotik ROS7
-
-## [0.3.0] - 2026-02-01
-### Added
-- Поддержка **YAML-docstring** в шаблонах:
-  - Все BGP-шаблоны (Cisco и MikroTik) переработаны с декларативным YAML-header в начале файла.
-  - Формат позволяет описывать переменные, их типы, обязательность, значения по умолчанию, примеры и описания.
-- Обновлён интерактивный рендерер `tools/render-template-interactive.py`:
-  - Автоматический парсинг YAML-docstring.
-  - Улучшенный UX: вывод описаний, примеров, валидация типов (int, ip, cidr, list и т.д.), проверка обязательных полей.
-  - Полная обратная совместимость с шаблонами без YAML-header.
-
-## [0.3.1] - 2026-02-01
-### Added
-- Обновлена документация по работе с интерактивным рендером
-
-## [0.4.0] - 2026-02-01
-### Added
-- Новый шаблон `templates/cisco/ios-xe/pbr.j2` для настройки Policy-Based Routing (PBR) на Cisco IOS-XE
-
-## [0.5.0] - 2026-02-07
-### Added
-- Новые шаблоны IPsec для Cisco IOS-XE:
-  - `templates/cisco/ios-xe/ipsec-ikev2-global.j2`: базовая настройка Proposals/Policies по концепции NGE (Next Generation Encryption)
-  - `templates/cisco/ios-xe/add-vti-ikev2-peer.j2`: настройка конкретного IKEv2/IPsec туннеля

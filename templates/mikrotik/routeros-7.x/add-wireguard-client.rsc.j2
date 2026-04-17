@@ -1,0 +1,81 @@
+{#---
+name: mikrotik-add-wireguard-client
+description: >
+  Настройка WireGuard-клиента на MikroTik RouterOS 7.x для доступа к удалённым подсетям.
+  Создаёт настройку интерфейса, peer, статические маршруты и опциональный NAT.
+vars:
+  wg_interface:
+    type: str
+    required: true
+    example: wireguard2
+    description: Имя WireGuard-интерфейса.
+  wg_private_key:
+    type: str
+    required: true
+    description: PrivateKey для локального интерфейса.
+  wg_address:
+    type: cidr
+    required: true
+    example: 10.128.1.199/24
+    description: WG-адрес для интерфейса.
+  peer_public_key:
+    type: str
+    required: true
+    description: PublicKey удалённого peer-а.
+  peer_endpoint_address:
+    type: str
+    required: true
+    example: 1.1.1.1
+    description: Публичный IP или DNS-имя удалённой стороны.
+  peer_endpoint_port:
+    type: int
+    required: true
+    default: 1432
+    description: Порт удалённой стороны.
+  peer_allowed_ips:
+    type: list
+    required: true
+    example: ["172.27.65.99/32", "172.27.65.75/32"]
+    description: Список удалённых подсетей (AllowedIPs).
+  enable_nat:
+    type: bool
+    required: false
+    default: false
+    description: Включить masquerade для локальных подсетей?
+  local_subnets:
+    type: list
+    required: false
+    default: []
+    example: ["192.168.88.0/24"]
+    description: Список локальных подсетей для NAT (если enable_nat=true).
+---#}
+
+# --- WireGuard Interface ---
+/interface wireguard
+add name="{{ wg_interface }}" private-key="{{ wg_private_key }}"
+
+# --- IP Address ---
+/ip address
+add address={{ wg_address }} interface="{{ wg_interface }}"
+
+# --- Peer ---
+/interface wireguard peers
+add interface="{{ wg_interface }}" \
+    public-key="{{ peer_public_key }}" \
+    endpoint-address="{{ peer_endpoint_address }}" \
+    endpoint-port={{ peer_endpoint_port }} \
+    allowed-address={% for ip in peer_allowed_ips %}{{ ip }}{% if not loop.last %},{% endif %}{% endfor %}
+
+# --- Routes ---
+/ip route
+{% for ip in peer_allowed_ips %}
+add dst-address={{ ip }} gateway="{{ wg_interface }}"
+{% endfor %}
+
+# --- NAT (Optional) ---
+{% if enable_nat and local_subnets %}
+/ip firewall nat
+{% for subnet in local_subnets %}
+add chain=srcnat out-interface="{{ wg_interface }}" src-address="{{ subnet }}" action=masquerade comment="WG: access to remote subnets"
+{% endfor %}
+{% endif %}
